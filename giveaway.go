@@ -65,23 +65,60 @@ func (m *model) startGiveaway(input startGiveawayInput) {
 		panic(err)
 	}
 
-	posts, err := getPostsData(userID, input.token)
-	if err != nil {
-		panic(err)
+	postID := ""
+
+	nextURL := ""
+
+	for {
+		posts, err := getPostsData(userID, input.token, nextURL)
+		if err != nil {
+			panic(err)
+		}
+
+		nextURL = posts.Paging.Next
+
+		for _, post := range posts.Data {
+			if post.ShortCode == input.postCode {
+				postID = post.ID
+
+				break
+			}
+		}
+
+		if postID != "" {
+			break
+		}
+
+		if posts.Paging.Next == "" {
+			break
+		}
+	}
+
+	var commentsFinal []commentsData
+
+	nextURL = ""
+
+	for {
+		comments, err := getCommentsData(postID, input.token, nextURL)
+		if err != nil {
+			panic(err)
+		}
+
+		nextURL = comments.Paging.Next
+
+		commentsFinal = append(commentsFinal, comments.Data...)
+
+		if comments.Paging.Next == "" {
+			break
+		}
 	}
 
 	contenders := giveaway{}
 
-	for _, post := range posts.Data {
-		if post.ShortCode != input.postCode {
-			continue
-		}
+	for _, comment := range commentsFinal {
+		mentions := regex.FindAllString(comment.Text, -1)
 
-		for _, comment := range post.Comments.Data {
-			mentions := regex.FindAllString(comment.Text, -1)
-
-			contenders[comment.Username] = append(contenders[comment.Username], mentions...)
-		}
+		contenders[comment.Username] = append(contenders[comment.Username], mentions...)
 	}
 
 	finalList := giveaway{}
