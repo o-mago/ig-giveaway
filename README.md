@@ -30,6 +30,9 @@ The options are:
 
 ## Requirements
 
+The Instagram's post code can be found in the path parameter of the url. E.g. `https://www.instagram.com/p/C2unenNseJB/`
+![post-code](https://github.com/o-mago/ig-giveaway/assets/23153316/66e1d5a2-2f5f-4a38-b3c5-5b9b9b9654ca)
+
 To use the tool, you must create a meta developer account and an app with the Instagram's Graph API access: `https://developers.facebook.com/apps/creation`
 
 Using the [Graph Api Explorer](https://developers.facebook.com/tools/explorer), you must add these scopes: `pages_show_list,instagram_basic,pages_read_engagement` and click `Generate Access Token`
