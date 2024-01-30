@@ -1,4 +1,4 @@
-module instagram-giveaway
+module ig-giveaway
 
 go 1.21.0
 
