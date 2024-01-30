@@ -1,4 +1,4 @@
-module ig-giveaway
+module github.com/o-mago/ig-giveaway
 
 go 1.21.0
 
