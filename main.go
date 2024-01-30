@@ -6,6 +6,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/exp/maps"
 )
 
 var (
@@ -24,8 +27,7 @@ var (
 	winnerStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 	winnerTextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
 
-	focusedButton = focusedStyle.Copy().Render("[ Submit ]")
-	blurredButton = fmt.Sprintf("[ %s ]", blurredStyle.Render("Submit"))
+	helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#626262")).Render
 )
 
 const (
@@ -41,13 +43,13 @@ type model struct {
 	focusedFilter bool
 	submitted     bool
 	percent       float64
-	winner        string
-	winnerText    string
+	winners       map[string][]string
+	finish        bool
 }
 
 func initialModel() *model {
 	m := &model{
-		inputs:       make([]textinput.Model, 4),
+		inputs:       make([]textinput.Model, 6),
 		progress:     progress.New(progress.WithDefaultGradient()),
 		shouldFilter: true,
 	}
@@ -70,7 +72,7 @@ func initialModel() *model {
 			t.EchoMode = textinput.EchoPassword
 			t.EchoCharacter = '•'
 		case 3:
-			t.Placeholder = "Number of mentions"
+			t.Placeholder = "Number of mentions (default 3)"
 			t.Validate = func(text string) error {
 				for _, s := range text {
 					if s < '0' || s > '9' {
@@ -80,6 +82,19 @@ func initialModel() *model {
 
 				return nil
 			}
+		case 4:
+			t.Placeholder = "Number of winners (default 1)"
+			t.Validate = func(text string) error {
+				for _, s := range text {
+					if s < '0' || s > '9' {
+						return fmt.Errorf("not a number")
+					}
+				}
+
+				return nil
+			}
+		case 5:
+			t.Placeholder = "Blocklist (comma separated)"
 		}
 
 		m.inputs[i] = t
@@ -102,9 +117,60 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "tab", "shift+tab", "enter", "up", "down":
 			s := msg.String()
 
-			if s == "enter" && m.focusIndex == len(m.inputs)+1 {
+			if s == "enter" && m.focusIndex >= len(m.inputs)+1 {
 				m.submitted = true
-				go m.startGiveaway(m.inputs[0].Value(), m.inputs[1].Value(), m.inputs[2].Value(), m.inputs[3].Value(), m.shouldFilter)
+
+				m.percent = 0
+				m.progress.SetPercent(m.percent)
+
+				if m.inputs[3].Value() == "" {
+					m.inputs[3].SetValue("3")
+				}
+
+				if m.inputs[4].Value() == "" {
+					m.inputs[4].SetValue("1")
+				}
+
+				totalMentions, err := strconv.Atoi(m.inputs[3].Value())
+				if err != nil {
+					panic(err)
+				}
+
+				totalWinners, err := strconv.Atoi(m.inputs[4].Value())
+				if err != nil {
+					panic(err)
+				}
+
+				if m.focusIndex == len(m.inputs)+2 {
+					updatedBlockList := m.inputs[5].Value()
+
+					if m.inputs[5].Value() != "" {
+						updatedBlockList += ","
+					}
+
+					for username := range m.winners {
+						updatedBlockList += username + ","
+					}
+
+					updatedBlockList = strings.TrimSuffix(updatedBlockList, ",")
+
+					m.inputs[5].SetValue(updatedBlockList)
+				}
+
+				blockList := strings.Split(m.inputs[5].Value(), ",")
+
+				input := startGiveawayInput{
+					userName:      m.inputs[0].Value(),
+					postCode:      m.inputs[1].Value(),
+					token:         m.inputs[2].Value(),
+					totalMentions: totalMentions,
+					totalWinners:  totalWinners,
+					blockList:     blockList,
+					shouldFilter:  m.shouldFilter,
+				}
+
+				go m.startGiveaway(input)
+
 				return m, tickCmd()
 			}
 
@@ -119,7 +185,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusIndex++
 			}
 
-			if m.focusIndex > len(m.inputs)+1 {
+			if m.focusIndex > len(m.inputs)+2 {
 				m.focusIndex = 0
 			} else if m.focusIndex < 0 {
 				m.focusIndex = len(m.inputs)
@@ -149,10 +215,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 	case tickMsg:
-		if m.progress.Percent() == 1.0 {
-			return m, tea.Quit
-		}
-
 		cmd := m.progress.SetPercent(m.percent)
 		return m, tea.Batch(tickCmd(), cmd)
 
@@ -172,7 +234,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Handle character input and blinking
 	cmd := m.updateInputs(msg)
 
 	return m, cmd
@@ -181,8 +242,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *model) updateInputs(msg tea.Msg) tea.Cmd {
 	cmds := make([]tea.Cmd, len(m.inputs))
 
-	// Only text inputs with Focus() set will respond, so it's safe to simply
-	// update all of them here without any further logic.
 	for i := range m.inputs {
 		m.inputs[i], cmds[i] = m.inputs[i].Update(msg)
 	}
@@ -205,32 +264,64 @@ func (m *model) View() string {
 		check = "x"
 	}
 
-	filterCheck := fmt.Sprintf("\n[%s] Should filter one entry per user?", check)
+	filterCheck := fmt.Sprintf("\n[%s] ", check)
+	filterCheckPlaceholder := "Should filter one entry per user"
 
 	if m.focusedFilter {
 		filterCheck = focusedStyle.Render(filterCheck)
+		filterCheckPlaceholder = focusedStyle.Render(filterCheckPlaceholder)
+	} else {
+		filterCheckPlaceholder = blurredStyle.Render(filterCheckPlaceholder)
 	}
 
-	b.WriteString(filterCheck)
+	b.WriteString(filterCheck + filterCheckPlaceholder)
 
-	button := &blurredButton
+	buttonText := "Submit"
+
+	if m.finish {
+		buttonText = "Repeat"
+	}
+
+	submitButton := fmt.Sprintf("[ %s ]", blurredStyle.Render(buttonText))
 	if m.focusIndex == len(m.inputs)+1 {
-		button = &focusedButton
+		submitButton = focusedStyle.Render(fmt.Sprintf("[ %s ]", buttonText))
 	}
-	fmt.Fprintf(&b, "\n\n%s\n\n", *button)
+	fmt.Fprintf(&b, "\n\n%s", submitButton)
+
+	if m.finish {
+		repeatButtonText := "Repeat without last winners"
+
+		repeatButton := fmt.Sprintf("[ %s ]", blurredStyle.Render(repeatButtonText))
+		if m.focusIndex == len(m.inputs)+2 {
+			repeatButton = focusedStyle.Render(fmt.Sprintf("[ %s ]", repeatButtonText))
+		}
+		fmt.Fprintf(&b, "	%s", repeatButton)
+	}
+
+	b.WriteString("\n\n")
 
 	if m.submitted {
 		b.WriteString(m.progress.View() + "\n\n")
 	}
 
-	if m.winner != "" && m.winnerText != "" {
-		winner := winnerStyle.Render(m.winner)
-		winnerText := winnerTextStyle.Render(m.winnerText)
+	if len(m.winners) > 0 {
+		userNames := maps.Keys(m.winners)
 
-		finishMessage := fmt.Sprintf("The winner was: %s.\nThe comment was: %s", winner, winnerText)
+		// We must sort a slice to show, because maps don't have a fixed order of their keys
+		// This way we avoid the screen to keep change winners position
+		sort.Strings(userNames)
 
-		b.WriteString(finishMessage + "\n\n")
+		for _, userName := range userNames {
+			winner := winnerStyle.Render("@" + userName)
+			winnerText := winnerTextStyle.Render(m.winners[userName]...)
+
+			finishMessage := fmt.Sprintf("The winner was: %s\nThe mentions were: %s", winner, winnerText)
+
+			b.WriteString(finishMessage + "\n\n")
+		}
 	}
+
+	b.WriteString(helpStyle("Press esc to quit") + "\n")
 
 	return b.String()
 }
