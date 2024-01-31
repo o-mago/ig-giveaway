@@ -36,22 +36,21 @@ const (
 )
 
 type model struct {
-	focusIndex    int
-	inputs        []textinput.Model
-	progress      progress.Model
-	shouldFilter  bool
-	focusedFilter bool
-	submitted     bool
-	percent       float64
-	winners       map[string][]string
-	finish        bool
+	focusIndex      int
+	inputs          []textinput.Model
+	progress        progress.Model
+	multipleEntries bool
+	focusedFilter   bool
+	submitted       bool
+	percent         float64
+	winners         map[string][]string
+	finish          bool
 }
 
 func initialModel() *model {
 	m := &model{
-		inputs:       make([]textinput.Model, 6),
-		progress:     progress.New(progress.WithDefaultGradient()),
-		shouldFilter: true,
+		inputs:   make([]textinput.Model, 6),
+		progress: progress.New(progress.WithDefaultGradient()),
 	}
 
 	var t textinput.Model
@@ -122,6 +121,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				m.percent = 0
 				m.progress.SetPercent(m.percent)
+				m.winners = giveaway{}
 
 				if m.inputs[3].Value() == "" {
 					m.inputs[3].SetValue("3")
@@ -160,13 +160,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				blockList := strings.Split(m.inputs[5].Value(), ",")
 
 				input := startGiveawayInput{
-					userName:      m.inputs[0].Value(),
-					postCode:      m.inputs[1].Value(),
-					token:         m.inputs[2].Value(),
-					totalMentions: totalMentions,
-					totalWinners:  totalWinners,
-					blockList:     blockList,
-					shouldFilter:  m.shouldFilter,
+					userName:        m.inputs[0].Value(),
+					postCode:        m.inputs[1].Value(),
+					token:           m.inputs[2].Value(),
+					totalMentions:   totalMentions,
+					totalWinners:    totalWinners,
+					blockList:       blockList,
+					multipleEntries: m.multipleEntries,
 				}
 
 				go m.startGiveaway(input)
@@ -175,7 +175,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			if s == "enter" && m.focusIndex == len(m.inputs) {
-				m.shouldFilter = !m.shouldFilter
+				m.multipleEntries = !m.multipleEntries
 				return m, nil
 			}
 
@@ -260,12 +260,12 @@ func (m *model) View() string {
 	}
 
 	check := " "
-	if m.shouldFilter {
+	if m.multipleEntries {
 		check = "x"
 	}
 
 	filterCheck := fmt.Sprintf("\n[%s] ", check)
-	filterCheckPlaceholder := "Should filter one entry per user"
+	filterCheckPlaceholder := "Multiple entries per user (every x mentions, 1 entry)"
 
 	if m.focusedFilter {
 		filterCheck = focusedStyle.Render(filterCheck)

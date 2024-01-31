@@ -26,7 +26,9 @@ The options are:
 - `Instagram post code`: code from the post (can be retrieved in the post web URL)
 - `Graph API Token`: access token generated using the [Graph Api Explorer](https://developers.facebook.com/tools/explorer)
 - `Number of mentions`: minimum number of mentions the user must comment to be a contender
-- `Should filter one entry per user?`: Each valid comment will be one entry or each user should have only one entry
+- `Number of winners`: number of winner draws
+- `Blocklist`: users that will not be winners
+- `Multiple entries per user`: if true, allows user to have 1 entry per X mentions
 
 ## Requirements
 

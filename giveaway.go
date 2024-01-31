@@ -10,53 +10,50 @@ import (
 
 type giveaway map[string][]string
 
+type contenders []string
+
 var regex = regexp.MustCompile("@[^ ]*")
 
-func (g *giveaway) Random(totalWinners int, blockList ...string) (giveaway, error) {
-	if g == nil || len(*g) == 0 {
+func (c *contenders) Random(totalWinners int, blockList ...string) ([]string, error) {
+	if c == nil || len(*c) == 0 {
 		return nil, fmt.Errorf("empty giveaway contenders")
 	}
 
-	winners := giveaway{}
+	winners := []string{}
 
 	selectedIndexes := map[int]bool{}
 
 	for len(winners) < totalWinners {
-		if len(selectedIndexes) >= len(*g) {
+		if len(selectedIndexes) >= len(*c) {
 			break
 		}
 
-		randomIndex := rand.Intn(len(*g))
+		randomIndex := rand.Intn(len(*c))
 
 		for selectedIndexes[randomIndex] {
-			randomIndex = rand.Intn(len(*g))
+			randomIndex = rand.Intn(len(*c))
 		}
 
-		index := 0
-		for userName, mentions := range *g {
-			if index == randomIndex {
-				if slices.Contains(blockList, userName) {
-					break
-				}
+		selectedUser := (*c)[randomIndex]
 
-				winners[userName] = mentions
-			}
-
-			index++
+		if slices.Contains(blockList, selectedUser) {
+			continue
 		}
+
+		winners = append(winners, selectedUser)
 	}
 
 	return winners, nil
 }
 
 type startGiveawayInput struct {
-	userName      string
-	postCode      string
-	token         string
-	totalMentions int
-	totalWinners  int
-	blockList     []string
-	shouldFilter  bool
+	userName        string
+	postCode        string
+	token           string
+	totalMentions   int
+	totalWinners    int
+	blockList       []string
+	multipleEntries bool
 }
 
 func (m *model) startGiveaway(input startGiveawayInput) {
@@ -64,6 +61,8 @@ func (m *model) startGiveaway(input startGiveawayInput) {
 	if err != nil {
 		panic(err)
 	}
+
+	m.percent += 0.1
 
 	postID := ""
 
@@ -94,6 +93,8 @@ func (m *model) startGiveaway(input startGiveawayInput) {
 		}
 	}
 
+	m.percent += 0.1
+
 	var commentsFinal []commentsData
 
 	nextURL = ""
@@ -113,26 +114,34 @@ func (m *model) startGiveaway(input startGiveawayInput) {
 		}
 	}
 
-	contenders := giveaway{}
+	m.percent += 0.1
+
+	usersGiveaway := giveaway{}
 
 	for _, comment := range commentsFinal {
 		mentions := regex.FindAllString(comment.Text, -1)
 
-		contenders[comment.Username] = append(contenders[comment.Username], mentions...)
+		usersGiveaway[comment.Username] = append(usersGiveaway[comment.Username], mentions...)
 	}
 
-	finalList := giveaway{}
-	for username, mentions := range contenders {
-		nonRepeatedMentions := slices.Compact(mentions)
+	finalList := contenders{}
 
-		if len(nonRepeatedMentions) < input.totalMentions {
-			continue
+	for userName, mentions := range usersGiveaway {
+		uniqueMentions := slices.Compact(mentions)
+
+		entries := 1
+		if input.multipleEntries {
+			entries = len(uniqueMentions) / input.totalMentions
 		}
 
-		finalList[username] = nonRepeatedMentions
+		if len(uniqueMentions) >= input.totalMentions {
+			for i := 0; i < entries; i++ {
+				finalList = append(finalList, userName)
+			}
+		}
 	}
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 6; i++ {
 		m.percent += 0.1
 
 		time.Sleep(time.Second)
@@ -143,6 +152,16 @@ func (m *model) startGiveaway(input startGiveawayInput) {
 		panic(err)
 	}
 
-	m.winners = winners
+	winnersGiveaway := giveaway{}
+
+	for _, winner := range winners {
+		winnersGiveaway[winner] = usersGiveaway[winner]
+	}
+
+	m.percent += 0.1
+
+	time.Sleep(300 * time.Millisecond)
+
+	m.winners = winnersGiveaway
 	m.finish = true
 }
