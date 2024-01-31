@@ -38,8 +38,8 @@ The Instagram's post code can be found in the path parameter of the url. E.g. `h
 
 To use the tool, you must create a meta developer account and an app with the Instagram's Graph API access: `https://developers.facebook.com/apps/creation`
 
-Using the [Graph Api Explorer](https://developers.facebook.com/tools/explorer), you must add these scopes: `pages_show_list,instagram_basic,pages_read_engagement` and click `Generate Access Token`
-Use this token to get
+Using the [Graph Api Explorer](https://developers.facebook.com/tools/explorer), you must add these scopes: `pages_show_list,instagram_basic,pages_read_engagement` and click `Generate Access Token`.
+Use this token for the `ig-giveaway`
 
 ![graph](https://github.com/o-mago/ig-giveaway/assets/23153316/3d107704-c36b-4fa4-a03d-0d166cbd3b7b)
 
