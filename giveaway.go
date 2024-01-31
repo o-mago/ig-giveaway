@@ -23,22 +23,58 @@ func (c *contenders) Random(totalWinners int, blockList ...string) ([]string, er
 
 	selectedIndexes := map[int]bool{}
 
-	for len(winners) < totalWinners {
-		if len(selectedIndexes) >= len(*c) {
-			break
-		}
+	if totalWinners > len(*c) {
+		return *c, nil
+	}
 
+	for len(winners) < totalWinners {
 		randomIndex := rand.Intn(len(*c))
 
 		for selectedIndexes[randomIndex] {
 			randomIndex = rand.Intn(len(*c))
 		}
 
-		selectedUser := (*c)[randomIndex]
+		winners = append(winners, (*c)[randomIndex])
+	}
 
-		if slices.Contains(blockList, selectedUser) {
-			continue
+	return winners, nil
+}
+
+func (c *contenders) RandomAllContenders(totalWinners int, model *model, blockList ...string) ([]string, error) {
+	if c == nil || len(*c) == 0 {
+		return nil, fmt.Errorf("empty giveaway contenders")
+	}
+
+	winners := []string{}
+
+	selectedIndexes := map[int]bool{}
+
+	if totalWinners > len(*c) {
+		return *c, nil
+	}
+
+	step := 0.6 / float64(totalWinners*30)
+
+	for winnerPos := 0; winnerPos < totalWinners; winnerPos++ {
+		var randomIndex int
+
+		for i := 0; i < 30; i++ {
+			randomIndex = rand.Intn(len(*c))
+
+			for selectedIndexes[randomIndex] {
+				randomIndex = rand.Intn(len(*c))
+			}
+
+			model.selectedContenders[winnerPos] = randomIndex
+
+			model.percent += step
+
+			time.Sleep(100 * time.Millisecond)
 		}
+
+		selectedIndexes[randomIndex] = true
+
+		selectedUser := (*c)[randomIndex]
 
 		winners = append(winners, selectedUser)
 	}
@@ -54,6 +90,7 @@ type startGiveawayInput struct {
 	totalWinners    int
 	blockList       []string
 	multipleEntries bool
+	allContenders   bool
 }
 
 func (m *model) startGiveaway(input startGiveawayInput) {
@@ -119,6 +156,10 @@ func (m *model) startGiveaway(input startGiveawayInput) {
 	usersGiveaway := giveaway{}
 
 	for _, comment := range commentsFinal {
+		if slices.Contains(input.blockList, comment.Username) {
+			continue
+		}
+
 		mentions := regex.FindAllString(comment.Text, -1)
 
 		usersGiveaway[comment.Username] = append(usersGiveaway[comment.Username], mentions...)
@@ -141,15 +182,28 @@ func (m *model) startGiveaway(input startGiveawayInput) {
 		}
 	}
 
-	for i := 0; i < 6; i++ {
-		m.percent += 0.1
+	if !m.allContenders {
+		for i := 0; i < 6; i++ {
+			m.percent += 0.1
 
-		time.Sleep(time.Second)
+			time.Sleep(time.Second)
+		}
 	}
 
-	winners, err := finalList.Random(input.totalWinners)
-	if err != nil {
-		panic(err)
+	var winners []string
+
+	if !input.allContenders {
+		winners, err = finalList.Random(input.totalWinners)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		m.contenders = finalList
+
+		winners, err = finalList.RandomAllContenders(input.totalWinners, m)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	winnersGiveaway := giveaway{}
