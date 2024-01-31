@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,6 +26,9 @@ var (
 	winnerTextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
 
 	helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#626262")).Render
+
+	selectedContenderStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	notSelectedContenderStyle = lipgloss.NewStyle()
 )
 
 const (
@@ -33,15 +37,19 @@ const (
 )
 
 type model struct {
-	focusIndex      int
-	inputs          []textinput.Model
-	progress        progress.Model
-	multipleEntries bool
-	focusedFilter   bool
-	submitted       bool
-	percent         float64
-	winners         map[string][]string
-	finish          bool
+	focusIndex             int
+	inputs                 []textinput.Model
+	progress               progress.Model
+	multipleEntries        bool
+	focusedMultipleEntries bool
+	allContenders          bool
+	focusedAllContenders   bool
+	selectedContenders     []int
+	contenders             []string
+	submitted              bool
+	percent                float64
+	winners                map[string][]string
+	finish                 bool
 }
 
 func initialModel() *model {
@@ -113,7 +121,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "tab", "shift+tab", "enter", "up", "down":
 			s := msg.String()
 
-			if s == "enter" && m.focusIndex >= len(m.inputs)+1 {
+			if s == "enter" && m.focusIndex >= len(m.inputs)+2 {
 				m.submitted = true
 
 				m.percent = 0
@@ -138,7 +146,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					panic(err)
 				}
 
-				if m.focusIndex == len(m.inputs)+2 {
+				if m.focusIndex == len(m.inputs)+3 {
 					updatedBlockList := m.inputs[5].Value()
 
 					if m.inputs[5].Value() != "" {
@@ -156,6 +164,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				blockList := strings.Split(m.inputs[5].Value(), ",")
 
+				m.selectedContenders = make([]int, totalWinners)
+				for i := range m.selectedContenders {
+					m.selectedContenders[i] = -1
+				}
+
 				input := startGiveawayInput{
 					userName:        m.inputs[0].Value(),
 					postCode:        m.inputs[1].Value(),
@@ -164,6 +177,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					totalWinners:    totalWinners,
 					blockList:       blockList,
 					multipleEntries: m.multipleEntries,
+					allContenders:   m.allContenders,
 				}
 
 				go m.startGiveaway(input)
@@ -173,6 +187,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if s == "enter" && m.focusIndex == len(m.inputs) {
 				m.multipleEntries = !m.multipleEntries
+				return m, nil
+			}
+
+			if s == "enter" && m.focusIndex == len(m.inputs)+1 {
+				m.allContenders = !m.allContenders
 				return m, nil
 			}
 
@@ -204,9 +223,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			if m.focusIndex == len(m.inputs) {
-				m.focusedFilter = true
+				m.focusedMultipleEntries = true
 			} else {
-				m.focusedFilter = false
+				m.focusedMultipleEntries = false
+			}
+
+			if m.focusIndex == len(m.inputs)+1 {
+				m.focusedAllContenders = true
+			} else {
+				m.focusedAllContenders = false
 			}
 
 			return m, tea.Batch(cmds...)
@@ -256,22 +281,11 @@ func (m *model) View() string {
 		}
 	}
 
-	check := " "
-	if m.multipleEntries {
-		check = "x"
-	}
+	multipleCheck := checkbox("Multiple entries per user (every x mentions, 1 entry)", m.multipleEntries, m.focusedMultipleEntries)
+	b.WriteString(multipleCheck)
 
-	filterCheck := fmt.Sprintf("\n[%s] ", check)
-	filterCheckPlaceholder := "Multiple entries per user (every x mentions, 1 entry)"
-
-	if m.focusedFilter {
-		filterCheck = focusedStyle.Render(filterCheck)
-		filterCheckPlaceholder = focusedStyle.Render(filterCheckPlaceholder)
-	} else {
-		filterCheckPlaceholder = blurredStyle.Render(filterCheckPlaceholder)
-	}
-
-	b.WriteString(filterCheck + filterCheckPlaceholder)
+	allContendersCheck := checkbox("Show all contenders animation", m.allContenders, m.focusedAllContenders)
+	b.WriteString(allContendersCheck)
 
 	buttonText := "Submit"
 
@@ -280,7 +294,7 @@ func (m *model) View() string {
 	}
 
 	submitButton := fmt.Sprintf("[ %s ]", blurredStyle.Render(buttonText))
-	if m.focusIndex == len(m.inputs)+1 {
+	if m.focusIndex == len(m.inputs)+2 {
 		submitButton = focusedStyle.Render(fmt.Sprintf("[ %s ]", buttonText))
 	}
 	fmt.Fprintf(&b, "\n\n%s", submitButton)
@@ -289,7 +303,7 @@ func (m *model) View() string {
 		repeatButtonText := "Repeat without last winners"
 
 		repeatButton := fmt.Sprintf("[ %s ]", blurredStyle.Render(repeatButtonText))
-		if m.focusIndex == len(m.inputs)+2 {
+		if m.focusIndex == len(m.inputs)+3 {
 			repeatButton = focusedStyle.Render(fmt.Sprintf("[ %s ]", repeatButtonText))
 		}
 		fmt.Fprintf(&b, "	%s", repeatButton)
@@ -299,6 +313,24 @@ func (m *model) View() string {
 
 	if m.submitted {
 		b.WriteString(m.progress.View() + "\n\n")
+	}
+
+	if m.allContenders {
+		for index, contender := range m.contenders {
+			if index%6 == 0 {
+				b.WriteString("\n")
+			}
+
+			if slices.Contains(m.selectedContenders, index) {
+				b.WriteString(selectedContenderStyle.Render("@"+contender) + " ")
+
+				continue
+			}
+
+			b.WriteString(notSelectedContenderStyle.Render("@"+contender) + " ")
+		}
+
+		b.WriteString("\n\n")
 	}
 
 	if len(m.winners) > 0 {
@@ -312,7 +344,7 @@ func (m *model) View() string {
 			winner := winnerStyle.Render("@" + userName)
 			winnerText := winnerTextStyle.Render(m.winners[userName]...)
 
-			finishMessage := fmt.Sprintf("The winner was: %s\nThe mentions were: %s", winner, winnerText)
+			finishMessage := fmt.Sprintf("\nThe winner was: %s\nThe mentions were: %s", winner, winnerText)
 
 			b.WriteString(finishMessage + "\n\n")
 		}
@@ -321,6 +353,26 @@ func (m *model) View() string {
 	b.WriteString(helpStyle("Press esc to quit") + "\n")
 
 	return b.String()
+}
+
+func checkbox(text string, conditional, focused bool) string {
+	check := " "
+	if conditional {
+		check = "x"
+	}
+
+	check = fmt.Sprintf("\n[%s] ", check)
+
+	checkPlaceholder := text
+
+	if focused {
+		check = focusedStyle.Render(check)
+		checkPlaceholder = focusedStyle.Render(checkPlaceholder)
+	} else {
+		checkPlaceholder = blurredStyle.Render(checkPlaceholder)
+	}
+
+	return check + checkPlaceholder
 }
 
 type tickMsg time.Time
