@@ -1,4 +1,4 @@
-![Captura de tela de 2024-01-30 16-55-59](https://github.com/o-mago/ig-giveaway/assets/23153316/3f480193-1852-4fc5-86a1-44a27f8fe205)
+![Captura de tela de 2024-01-31 01-59-09](https://github.com/o-mago/ig-giveaway/assets/23153316/c24ddc26-51be-4073-b6f4-2823c0fd647c)
 
 ## About
 
