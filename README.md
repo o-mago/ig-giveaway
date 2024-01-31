@@ -29,6 +29,7 @@ The options are:
 - `Number of winners`: number of winner draws
 - `Blocklist`: users that will not be winners
 - `Multiple entries per user`: if true, allows user to have 1 entry per X mentions
+- `Show all contenders animation`: if true, show all contenders and rotate focus between them
 
 ## Requirements
 
